@@ -14,9 +14,22 @@ RUN apt-get install -y --fix-missing --no-install-recommends \
             bash zip curl \
             libpq-dev libssl-dev \
             autoconf automake sqlite3 bash-completion \
-            rsync ccache
-RUN apt-get install -y libzstd-dev
+            alien libaio1 \
+            rsync ccache \
+            libzstd-dev
 ARG PROJ_INSTALL_PREFIX=/usr/local
+
+# Install the Oracle client so that we can compile GDAL with OCI driver support.
+ARG ORACLECLIENT_VERSION=19.6
+COPY *.rpm ./
+RUN alien -i oracle-instantclient${ORACLECLIENT_VERSION}-basic-${ORACLECLIENT_VERSION}.0.0.0-1.x86_64.rpm \
+    && alien -i oracle-instantclient${ORACLECLIENT_VERSION}-sqlplus-${ORACLECLIENT_VERSION}.0.0.0-1.x86_64.rpm \
+    && alien -i oracle-instantclient${ORACLECLIENT_VERSION}-devel-${ORACLECLIENT_VERSION}.0.0.0-1.x86_64.rpm \
+    && rm /*.rpm \
+    && cp /usr/include/oracle/${ORACLECLIENT_VERSION}/client64/*.h /usr/include/
+COPY tnsnames.ora /usr/lib/oracle/${ORACLECLIENT_VERSION}/client64/lib/network/admin/
+ENV ORACLE_HOME=/usr/lib/oracle/${ORACLECLIENT_VERSION}/client64
+ENV LD_LIBRARY_PATH=/usr/lib/oracle/${ORACLECLIENT_VERSION}/client64/lib:$LD_LIBRARY_PATH
 
 # Build openjpeg
 ARG OPENJPEG_VERSION=2.3.1
@@ -93,6 +106,7 @@ RUN if test "${GDAL_VERSION}" = "master"; then \
     --with-webp --with-proj=/build${PROJ_INSTALL_PREFIX} \
     --with-libtiff=internal --with-rename-internal-libtiff-symbols \
     --with-geotiff=internal --with-rename-internal-libgeotiff-symbols \
+    --with-oci=/usr/lib/oracle/${ORACLECLIENT_VERSION}/client64 \
     && make -j$(nproc) \
     && cd swig/java \
     && make -j$(nproc) \
@@ -112,7 +126,7 @@ RUN if test "${GDAL_VERSION}" = "master"; then \
 FROM adoptopenjdk:11-openj9-focal as runner
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update
-RUN apt-get install -y  --no-install-recommends libsqlite3-0 curl unzip
+RUN apt-get install -y --no-install-recommends libsqlite3-0 curl unzip
 
 # GDAL dependencies
 RUN apt-get install -y --no-install-recommends \
@@ -126,11 +140,15 @@ RUN apt-get install -y --no-install-recommends \
         libwebp6 \
         libzstd1 bash libpq5 libssl1.1
 
+# Oracle install dependencies
+RUN apt-get install -y --no-install-recommends \
+        alien libaio1
+
 # Order layers starting with less frequently varying ones
 COPY --from=builder  /build_thirdparty/usr/ /usr/
-
 COPY --from=builder  /build_projgrids/ /usr/
 
+ARG PROJ_INSTALL_PREFIX=/usr/local
 COPY --from=builder  /build${PROJ_INSTALL_PREFIX}/share/proj/ ${PROJ_INSTALL_PREFIX}/share/proj/
 COPY --from=builder  /build${PROJ_INSTALL_PREFIX}/include/ ${PROJ_INSTALL_PREFIX}/include/
 COPY --from=builder  /build${PROJ_INSTALL_PREFIX}/bin/ ${PROJ_INSTALL_PREFIX}/bin/
@@ -139,8 +157,21 @@ COPY --from=builder  /build${PROJ_INSTALL_PREFIX}/lib/ ${PROJ_INSTALL_PREFIX}/li
 COPY --from=builder  /build/usr/share/gdal/ /usr/share/gdal/
 COPY --from=builder  /build/usr/include/ /usr/include/
 COPY --from=builder  /build_gdal_version_changing/usr/ /usr/
-RUN (for so in \
-     /usr/share/gdal/libso/*.so; \
-     do ln -s $so  /usr/lib/; done)
+RUN (for so in /usr/share/gdal/libso/*.so; do ln -s $so /usr/lib/; done)
 
-RUN ldconfig
+# Reinstall the Oracle client
+ARG ORACLECLIENT_VERSION=19.6
+COPY *.rpm ./
+RUN alien -i oracle-instantclient${ORACLECLIENT_VERSION}-basic-${ORACLECLIENT_VERSION}.0.0.0-1.x86_64.rpm \
+    && alien -i oracle-instantclient${ORACLECLIENT_VERSION}-sqlplus-${ORACLECLIENT_VERSION}.0.0.0-1.x86_64.rpm \
+    && alien -i oracle-instantclient${ORACLECLIENT_VERSION}-devel-${ORACLECLIENT_VERSION}.0.0.0-1.x86_64.rpm \
+    && rm /*.rpm \
+    && cp /usr/include/oracle/${ORACLECLIENT_VERSION}/client64/*.h /usr/include/
+COPY tnsnames.ora /usr/lib/oracle/${ORACLECLIENT_VERSION}/client64/lib/network/admin/
+ENV ORACLE_HOME=/usr/lib/oracle/${ORACLECLIENT_VERSION}/client64
+ENV LD_LIBRARY_PATH=/usr/lib/oracle/${ORACLECLIENT_VERSION}/client64/lib:$LD_LIBRARY_PATH
+
+RUN ldconfig -v
+
+# Remove unused libs
+RUN apt-get remove alien -y && apt-get autoremove -y
