@@ -1,5 +1,6 @@
 FROM adoptopenjdk:11-openj9-focal as builder
 MAINTAINER asi@dbca.wa.gov.au
+LABEL org.opencontainers.image.source https://github.com/dbca-wa/gdal-grande
 
 RUN apt-get update -y
 RUN apt-get install -y --fix-missing --no-install-recommends \
@@ -57,10 +58,11 @@ RUN \
     && rm -f *.zip
 
 # Build PROJ
-ARG PROJ_VERSION=master
+# NOTE: updating the Proj version past 8.2.1 would require refactoring the build system to use CMake.
+# Reference: https://proj.org/community/rfc/rfc-7.html
+ARG PROJ_VERSION=8.2.1
 RUN mkdir proj \
-    && wget -q https://github.com/OSGeo/proj.4/archive/${PROJ_VERSION}.tar.gz -O - \
-        | tar xz -C proj --strip-components=1 \
+    && wget -q https://github.com/OSGeo/PROJ/archive/refs/tags/${PROJ_VERSION}.tar.gz -O - | tar xz -C proj --strip-components=1 \
     && cd proj \
     && ./autogen.sh \
     && CFLAGS='-DPROJ_RENAME_SYMBOLS -O2' CXXFLAGS='-DPROJ_RENAME_SYMBOLS -O2' \
