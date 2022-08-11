@@ -20,9 +20,18 @@ Library versions:
 https://www.oracle.com/database/technologies/instant-client/linux-x86-64-downloads.html
 2. Make note of the version number, and update the `Dockerfile` argument `ORACLECLIENT_VERSION`.
 3. Copy the department's `tnsnames.ora` file next to the Dockerfile.
-4. Run `docker image build --tag ghcr.io/dbca-wa/gdal-grande`
+4. Run `docker image build --tag ghcr.io/dbca-wa/gdal-grande .`
 
 # Usage
+
+Example command to dump a PostgreSQL database query to GeoPackage:
+
+```bash
+docker container run -v `pwd`:/out ghcr.io/dbca-wa/gdal-grande \
+ogr2ogr -progress -f "GPKG" /out/<table_name>.gpkg \
+PG:"host=<dbhost> user=<username> dbname=<dbname> password=<pw>" \
+-sql "SELECT * FROM <tablename>" -nlt POLYGON -nln <table_name>
+```
 
 Example command to dump a PostgreSQL database query to file geodatabase:
 
